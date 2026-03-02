@@ -1,0 +1,271 @@
+/* ── Layout ── */
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.conn-indicator {
+  font-size: 0.78rem;
+  padding: 0.25em 0.7em;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.conn-on  { background: rgba(76,175,125,0.15); color: var(--success); }
+.conn-off { background: rgba(224,85,85,0.15);  color: var(--danger); }
+
+.app-main {
+  display: flex;
+  flex: 1;
+  gap: 0;
+  overflow: hidden;
+}
+
+.player-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  gap: 1rem;
+  overflow-y: auto;
+}
+
+.sidebar {
+  width: 360px;
+  min-width: 280px;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* ── Login ── */
+.login-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.login-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2.5rem 2rem;
+  width: 100%;
+  max-width: 360px;
+  text-align: center;
+}
+
+.login-card h1 { margin-bottom: 1.5rem; font-size: 1.8rem; }
+
+.login-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.login-card input {
+  padding: 0.6em 1em;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 1rem;
+  font-family: inherit;
+}
+.login-card input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+
+.login-card button { width: 100%; padding: 0.65em; font-size: 1rem; }
+
+/* ── Video Player ── */
+.player-wrapper {
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+.video-el {
+  width: 100%;
+  display: block;
+  max-height: 60vh;
+  background: #000;
+}
+
+.player-title {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  background: var(--surface);
+}
+
+.player-empty {
+  background: var(--surface);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--text-dim);
+}
+
+/* ── Queue ── */
+.queue { padding: 0.75rem 1rem; }
+
+.queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.queue-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--surface2);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.drag-handle {
+  cursor: grab;
+  color: var(--text-dim);
+  font-size: 1.1rem;
+  line-height: 1;
+  user-select: none;
+}
+.drag-handle:active { cursor: grabbing; }
+
+.queue-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.88rem;
+}
+
+/* ── Uploader ── */
+.uploader {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.upload-list {
+  list-style: none;
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.upload-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+}
+
+.upload-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-bar-track {
+  width: 80px;
+  height: 5px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.upload-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+
+.status-done .upload-bar-fill { background: var(--success); }
+.status-error .upload-bar-fill { background: var(--danger); }
+
+.upload-pct { font-size: 0.78rem; color: var(--text-dim); width: 28px; text-align: right; }
+.status-done  .upload-pct { color: var(--success); }
+.status-error .upload-pct { color: var(--danger); }
+
+/* ── Library ── */
+.library {
+  padding: 1rem;
+  flex: 1;
+}
+
+.library-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.library-item {
+  padding: 0.5rem 0.6rem;
+  background: var(--surface2);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.library-item.active {
+  border-color: var(--accent);
+}
+
+.library-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.library-name {
+  font-size: 0.88rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-meta {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.library-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}

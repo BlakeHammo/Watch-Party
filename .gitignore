@@ -1,0 +1,8 @@
+node_modules/
+client/node_modules/
+server/uploads/*.mp4
+server/uploads/*.mkv
+server/uploads/*.webm
+server/uploads/*.mov
+server/uploads/*.avi
+.env
