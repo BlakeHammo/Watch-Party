@@ -9,12 +9,11 @@ import {
   SortableContext,
   verticalListSortingStrategy,
   useSortable,
-  arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import socket from '../socket';
 
-function SortableItem({ video, index }) {
+function SortableItem({ filename }) {
   const {
     attributes,
     listeners,
@@ -22,7 +21,7 @@ function SortableItem({ video, index }) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: video.id });
+  } = useSortable({ id: filename });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -31,20 +30,14 @@ function SortableItem({ video, index }) {
   };
 
   function remove() {
-    socket.emit('queue:remove', { index });
+    socket.emit('queue:remove', { filename });
   }
 
   return (
     <li ref={setNodeRef} style={style} className="queue-item">
-      <span className="drag-handle" {...attributes} {...listeners}>
-        ⠿
-      </span>
-      <span className="queue-name" title={video.originalName}>
-        {video.originalName}
-      </span>
-      <button className="btn btn-sm btn-ghost" onClick={remove} title="Remove">
-        ✕
-      </button>
+      <span className="drag-handle" {...attributes} {...listeners}>⠿</span>
+      <span className="queue-name" title={filename}>{filename}</span>
+      <button className="btn btn-sm btn-ghost" onClick={remove} title="Remove">✕</button>
     </li>
   );
 }
@@ -56,8 +49,8 @@ export default function Queue({ queue }) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const fromIndex = queue.findIndex((v) => v.id === active.id);
-    const toIndex = queue.findIndex((v) => v.id === over.id);
+    const fromIndex = queue.indexOf(active.id);
+    const toIndex = queue.indexOf(over.id);
     if (fromIndex === -1 || toIndex === -1) return;
 
     socket.emit('queue:reorder', { fromIndex, toIndex });
@@ -72,9 +65,7 @@ export default function Queue({ queue }) {
       <div className="queue-header">
         <h2>Up Next ({queue.length})</h2>
         {queue.length > 0 && (
-          <button className="btn btn-sm" onClick={handleNext}>
-            Skip →
-          </button>
+          <button className="btn btn-sm" onClick={handleNext}>Skip →</button>
         )}
       </div>
 
@@ -87,13 +78,10 @@ export default function Queue({ queue }) {
         collisionDetection={closestCenter}
         onDragEnd={handleDragEnd}
       >
-        <SortableContext
-          items={queue.map((v) => v.id)}
-          strategy={verticalListSortingStrategy}
-        >
+        <SortableContext items={queue} strategy={verticalListSortingStrategy}>
           <ul className="queue-list">
-            {queue.map((video, index) => (
-              <SortableItem key={video.id} video={video} index={index} />
+            {queue.map((filename) => (
+              <SortableItem key={filename} filename={filename} />
             ))}
           </ul>
         </SortableContext>

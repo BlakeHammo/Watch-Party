@@ -1,5 +1,4 @@
 const { state, getCurrentPosition } = require('./state');
-const { getVideos } = require('./routes/videos');
 
 function registerSocketHandlers(io) {
   io.on('connection', (socket) => {
@@ -7,7 +6,7 @@ function registerSocketHandlers(io) {
 
     // Send full state immediately on join (drift-compensated position)
     socket.emit('state', {
-      currentVideo: state.currentVideo,
+      currentFilename: state.currentFilename,
       position: getCurrentPosition(),
       isPlaying: state.isPlaying,
       queue: state.queue,
@@ -44,27 +43,27 @@ function registerSocketHandlers(io) {
 
     // ── Queue management ───────────────────────────────────────────────────
 
-    socket.on('queue:add', ({ videoId }) => {
-      const videos = getVideos();
-      const video = videos.find((v) => v.id === videoId);
-      if (!video) return;
+    socket.on('queue:add', ({ filename }) => {
+      if (!filename) return;
 
-      if (!state.currentVideo) {
-        // Nothing playing — auto-load this video
-        state.currentVideo = video;
+      if (!state.currentFilename) {
+        // Nothing loaded — auto-load this file for everyone
+        state.currentFilename = filename;
         state.position = 0;
         state.positionUpdatedAt = Date.now();
         state.isPlaying = false;
-        io.emit('video:changed', { video, position: 0 });
+        io.emit('video:changed', { filename, position: 0 });
       } else {
-        state.queue.push(video);
+        state.queue.push(filename);
         io.emit('queue:updated', { queue: state.queue });
       }
     });
 
-    socket.on('queue:remove', ({ index }) => {
-      if (index < 0 || index >= state.queue.length) return;
-      state.queue.splice(index, 1);
+    // Remove by filename (stable ID), not by index
+    socket.on('queue:remove', ({ filename }) => {
+      const idx = state.queue.indexOf(filename);
+      if (idx === -1) return;
+      state.queue.splice(idx, 1);
       io.emit('queue:updated', { queue: state.queue });
     });
 
@@ -79,20 +78,26 @@ function registerSocketHandlers(io) {
       io.emit('queue:updated', { queue: state.queue });
     });
 
+    // Guard against every client firing this simultaneously when a video ends
     socket.on('queue:next', () => {
+      if (state.advancingQueue) return;
+      state.advancingQueue = true;
+      setTimeout(() => { state.advancingQueue = false; }, 1000);
+
       if (state.queue.length === 0) {
-        state.currentVideo = null;
+        state.currentFilename = null;
         state.position = 0;
         state.isPlaying = false;
-        io.emit('video:changed', { video: null, position: 0 });
+        io.emit('video:changed', { filename: null, position: 0 });
         return;
       }
+
       const next = state.queue.shift();
-      state.currentVideo = next;
+      state.currentFilename = next;
       state.position = 0;
       state.positionUpdatedAt = Date.now();
       state.isPlaying = false;
-      io.emit('video:changed', { video: next, position: 0 });
+      io.emit('video:changed', { filename: next, position: 0 });
       io.emit('queue:updated', { queue: state.queue });
     });
 
@@ -100,7 +105,7 @@ function registerSocketHandlers(io) {
 
     socket.on('request-state', () => {
       socket.emit('state', {
-        currentVideo: state.currentVideo,
+        currentFilename: state.currentFilename,
         position: getCurrentPosition(),
         isPlaying: state.isPlaying,
         queue: state.queue,

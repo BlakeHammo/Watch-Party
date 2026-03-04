@@ -1,72 +1,79 @@
 import { useState, useEffect } from 'react';
+import axios from 'axios';
 import socket from './socket';
 import Login from './components/Login';
 import VideoPlayer from './components/VideoPlayer';
 import Queue from './components/Queue';
 import Library from './components/Library';
-import Uploader from './components/Uploader';
+import FolderPicker from './components/FolderPicker';
 import './App.css';
+
+// Redirect to login on expired/invalid token
+axios.interceptors.response.use(null, (err) => {
+  if (err.response?.status === 401 || err.response?.status === 403) {
+    localStorage.removeItem('token');
+    window.location.reload();
+  }
+  return Promise.reject(err);
+});
 
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [connected, setConnected] = useState(false);
+  const [fileMap, setFileMap] = useState(new Map());
 
-  // Party state (managed here so all components share it)
-  const [currentVideo, setCurrentVideo] = useState(null);
+  // Party state
+  const [currentFilename, setCurrentFilename] = useState(null);
   const [position, setPosition] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [queue, setQueue] = useState([]);
 
-  // Connect socket once we have a token
+  // Connect socket once we have a token — store handler refs for clean removal
   useEffect(() => {
     if (!token) return;
 
     socket.auth = { token };
     socket.connect();
 
-    socket.on('connect', () => setConnected(true));
-    socket.on('disconnect', () => setConnected(false));
+    const onConnect    = () => setConnected(true);
+    const onDisconnect = () => setConnected(false);
 
-    socket.on('state', ({ currentVideo, position, isPlaying, queue }) => {
-      setCurrentVideo(currentVideo);
+    const onState = ({ currentFilename, position, isPlaying, queue }) => {
+      setCurrentFilename(currentFilename);
       setPosition(position);
       setIsPlaying(isPlaying);
       setQueue(queue);
-    });
+    };
 
-    socket.on('play', ({ position }) => {
-      setPosition(position);
-      setIsPlaying(true);
-    });
+    const onPlay  = ({ position }) => { setPosition(position); setIsPlaying(true); };
+    const onPause = ({ position }) => { setPosition(position); setIsPlaying(false); };
+    const onSeek  = ({ position }) => { setPosition(position); };
 
-    socket.on('pause', ({ position }) => {
-      setPosition(position);
-      setIsPlaying(false);
-    });
-
-    socket.on('seek', ({ position }) => {
-      setPosition(position);
-    });
-
-    socket.on('queue:updated', ({ queue }) => {
-      setQueue(queue);
-    });
-
-    socket.on('video:changed', ({ video, position }) => {
-      setCurrentVideo(video);
+    const onQueueUpdated  = ({ queue })              => setQueue(queue);
+    const onVideoChanged  = ({ filename, position }) => {
+      setCurrentFilename(filename);
       setPosition(position);
       setIsPlaying(false);
-    });
+    };
+
+    socket.on('connect',       onConnect);
+    socket.on('disconnect',    onDisconnect);
+    socket.on('state',         onState);
+    socket.on('play',          onPlay);
+    socket.on('pause',         onPause);
+    socket.on('seek',          onSeek);
+    socket.on('queue:updated', onQueueUpdated);
+    socket.on('video:changed', onVideoChanged);
 
     return () => {
-      socket.off('connect');
-      socket.off('disconnect');
-      socket.off('state');
-      socket.off('play');
-      socket.off('pause');
-      socket.off('seek');
-      socket.off('queue:updated');
-      socket.off('video:changed');
+      socket.off('connect',       onConnect);
+      socket.off('disconnect',    onDisconnect);
+      socket.off('state',         onState);
+      socket.off('play',          onPlay);
+      socket.off('pause',         onPause);
+      socket.off('seek',          onSeek);
+      socket.off('queue:updated', onQueueUpdated);
+      socket.off('video:changed', onVideoChanged);
       socket.disconnect();
     };
   }, [token]);
@@ -99,16 +106,17 @@ export default function App() {
       <main className="app-main">
         <section className="player-section">
           <VideoPlayer
-            currentVideo={currentVideo}
+            currentFilename={currentFilename}
             position={position}
             isPlaying={isPlaying}
+            fileMap={fileMap}
           />
           <Queue queue={queue} />
         </section>
 
         <aside className="sidebar">
-          <Uploader token={token} />
-          <Library token={token} queue={queue} currentVideo={currentVideo} />
+          <FolderPicker fileMap={fileMap} onFilesLoaded={setFileMap} />
+          <Library fileMap={fileMap} queue={queue} currentFilename={currentFilename} />
         </aside>
       </main>
     </div>
