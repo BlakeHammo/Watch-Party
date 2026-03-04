@@ -22,7 +22,14 @@ const io = new Server(server, {
 });
 
 // ── Middleware ────────────────────────────────────────────────────────────────
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      'media-src': ["'self'", 'blob:'],
+    },
+  },
+}));
 app.use(cors({ origin: CLIENT_ORIGIN }));
 app.use(express.json());
 
