@@ -29,6 +29,17 @@
 .conn-on  { background: rgba(76,175,125,0.15); color: var(--success); }
 .conn-off { background: rgba(224,85,85,0.15);  color: var(--danger); }
 
+.room-stat {
+  font-size: 0.78rem;
+  padding: 0.25em 0.7em;
+  border-radius: 999px;
+  font-weight: 600;
+  background: rgba(255,255,255,0.07);
+  color: var(--text-dim);
+}
+.files-all-ready { background: rgba(76,175,125,0.15); color: var(--success); }
+.files-waiting   { background: rgba(255,193,7,0.15);  color: #f0b429; }
+
 .app-main {
   display: flex;
   flex: 1;
@@ -92,6 +103,72 @@
 }
 .login-card input:focus { outline: 2px solid var(--accent); border-color: transparent; }
 .login-card button { width: 100%; padding: 0.65em; font-size: 1rem; }
+
+/* ── Lobby ── */
+.lobby-card { text-align: left; max-width: 400px; }
+.lobby-subtitle { color: var(--text-dim); margin-bottom: 1.5rem; font-size: 0.95rem; }
+
+.lobby-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+
+.lobby-section input {
+  padding: 0.6em 1em;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 1rem;
+  font-family: inherit;
+}
+.lobby-section input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+
+.lobby-divider {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  margin: 0.5rem 0 1rem;
+  position: relative;
+}
+.lobby-divider::before,
+.lobby-divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 42%;
+  height: 1px;
+  background: var(--border);
+}
+.lobby-divider::before { left: 0; }
+.lobby-divider::after  { right: 0; }
+
+.lobby-link-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+}
+.lobby-link {
+  flex: 1;
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent);
+}
+
+.lobby-error { color: var(--danger); font-size: 0.88rem; margin-top: 0.5rem; }
+
+.btn-full { width: 100%; }
+.btn-sm { padding: 0.3em 0.8em; font-size: 0.82rem; flex-shrink: 0; }
+.btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-primary:hover { opacity: 0.88; }
 
 /* ── Video Player ── */
 .player-wrapper {

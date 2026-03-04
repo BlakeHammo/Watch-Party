@@ -1,26 +1,22 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
 import socket from './socket';
-import Login from './components/Login';
+import Lobby from './components/Lobby';
 import VideoPlayer from './components/VideoPlayer';
 import Queue from './components/Queue';
 import Library from './components/Library';
 import FolderPicker from './components/FolderPicker';
 import './App.css';
 
-// Redirect to login on expired/invalid token
-axios.interceptors.response.use(null, (err) => {
-  if (err.response?.status === 401 || err.response?.status === 403) {
-    localStorage.removeItem('token');
-    window.location.reload();
-  }
-  return Promise.reject(err);
-});
+function getRoomIdFromUrl() {
+  const match = window.location.pathname.match(/^\/room\/([a-f0-9]{8})$/);
+  return match ? match[1] : null;
+}
 
 export default function App() {
-  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [roomId, setRoomId] = useState(getRoomIdFromUrl);
   const [connected, setConnected] = useState(false);
   const [fileMap, setFileMap] = useState(new Map());
+  const [roomInfo, setRoomInfo] = useState({ count: 0, folderReadyCount: 0 });
 
   // Party state
   const [currentFilename, setCurrentFilename] = useState(null);
@@ -28,11 +24,11 @@ export default function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [queue, setQueue] = useState([]);
 
-  // Connect socket once we have a token — store handler refs for clean removal
+  // Connect socket once we have a roomId — store handler refs for clean removal
   useEffect(() => {
-    if (!token) return;
+    if (!roomId) return;
 
-    socket.auth = { token };
+    socket.io.opts.query = { roomId };
     socket.connect();
 
     const onConnect    = () => setConnected(true);
@@ -49,12 +45,13 @@ export default function App() {
     const onPause = ({ position }) => { setPosition(position); setIsPlaying(false); };
     const onSeek  = ({ position }) => { setPosition(position); };
 
-    const onQueueUpdated  = ({ queue })              => setQueue(queue);
-    const onVideoChanged  = ({ filename, position }) => {
+    const onQueueUpdated = ({ queue })              => setQueue(queue);
+    const onVideoChanged = ({ filename, position }) => {
       setCurrentFilename(filename);
       setPosition(position);
       setIsPlaying(false);
     };
+    const onRoomInfo = ({ count, folderReadyCount }) => setRoomInfo({ count, folderReadyCount });
 
     socket.on('connect',       onConnect);
     socket.on('disconnect',    onDisconnect);
@@ -64,6 +61,7 @@ export default function App() {
     socket.on('seek',          onSeek);
     socket.on('queue:updated', onQueueUpdated);
     socket.on('video:changed', onVideoChanged);
+    socket.on('room:info',     onRoomInfo);
 
     return () => {
       socket.off('connect',       onConnect);
@@ -74,32 +72,48 @@ export default function App() {
       socket.off('seek',          onSeek);
       socket.off('queue:updated', onQueueUpdated);
       socket.off('video:changed', onVideoChanged);
+      socket.off('room:info',     onRoomInfo);
       socket.disconnect();
     };
-  }, [token]);
+  }, [roomId]);
 
-  function handleLogin(newToken) {
-    localStorage.setItem('token', newToken);
-    setToken(newToken);
-  }
+  // Announce folder readiness whenever fileMap is populated (or on reconnect)
+  useEffect(() => {
+    if (connected && fileMap.size > 0) {
+      socket.emit('folder:ready');
+    }
+  }, [connected, fileMap]);
 
-  function handleLogout() {
-    localStorage.removeItem('token');
-    setToken(null);
-    socket.disconnect();
-  }
+  if (!roomId) return <Lobby setRoomId={setRoomId} />;
 
-  if (!token) return <Login onLogin={handleLogin} />;
+  const allReady = roomInfo.count > 0 && roomInfo.folderReadyCount === roomInfo.count;
 
   return (
     <div className="app">
       <header className="app-header">
         <h1>Watch Party</h1>
         <div className="header-right">
+          {roomInfo.count > 0 && (
+            <>
+              <span className="room-stat">
+                {roomInfo.count} {roomInfo.count === 1 ? 'person' : 'people'}
+              </span>
+              <span className={`room-stat files-stat ${allReady ? 'files-all-ready' : 'files-waiting'}`}>
+                {allReady
+                  ? 'All files loaded'
+                  : `${roomInfo.folderReadyCount}/${roomInfo.count} files loaded`}
+              </span>
+            </>
+          )}
           <span className={`conn-indicator ${connected ? 'conn-on' : 'conn-off'}`}>
             {connected ? 'Connected' : 'Disconnected'}
           </span>
-          <button className="btn-ghost" onClick={handleLogout}>Logout</button>
+          <button className="btn-ghost" onClick={() => {
+            socket.disconnect();
+            window.history.pushState({}, '', '/');
+            setRoomId(null);
+            setRoomInfo({ count: 0, folderReadyCount: 0 });
+          }}>Leave Room</button>
         </div>
       </header>
 
