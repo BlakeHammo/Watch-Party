@@ -6,6 +6,9 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
+const rateLimit = require('express-rate-limit');
+const helmet = require('helmet');
+
 const roomsRouter = require('./routes/rooms');
 const { registerSocketHandlers } = require('./socket-handlers');
 
@@ -19,11 +22,20 @@ const io = new Server(server, {
 });
 
 // ── Middleware ────────────────────────────────────────────────────────────────
+app.use(helmet());
 app.use(cors({ origin: CLIENT_ORIGIN }));
 app.use(express.json());
 
 // ── API Routes ────────────────────────────────────────────────────────────────
-app.use('/api/rooms', roomsRouter);
+// Rate limit room creation: max 20 rooms per IP per hour
+const roomLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many rooms created, try again later.' },
+});
+app.use('/api/rooms', roomLimiter, roomsRouter);
 
 registerSocketHandlers(io);
 
