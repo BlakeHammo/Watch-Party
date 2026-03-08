@@ -208,6 +208,15 @@
 .player-missing { border: 1px solid var(--danger); color: var(--text); }
 .player-missing strong { color: var(--danger); }
 
+.player-codec-warning {
+  background: rgba(255,193,7,0.12);
+  border-bottom: 1px solid rgba(255,193,7,0.35);
+  color: #f0b429;
+  font-size: 0.83rem;
+  padding: 0.5rem 0.75rem;
+}
+.player-codec-warning a { color: inherit; text-decoration: underline; }
+
 /* ── Queue ── */
 .queue { padding: 0.75rem 1rem; }
 

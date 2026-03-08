@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import socket from '../socket';
 
 const SEEK_THRESHOLD = 0.5; // seconds — ignore tiny drift
@@ -8,6 +8,7 @@ export default function VideoPlayer({ currentFilename, position, isPlaying, file
   const videoRef = useRef(null);
   const suppressEvents = useRef(false);
   const suppressTimer = useRef(null);
+  const [codecWarning, setCodecWarning] = useState(false);
 
   function suppress() {
     if (suppressTimer.current) clearTimeout(suppressTimer.current);
@@ -16,6 +17,11 @@ export default function VideoPlayer({ currentFilename, position, isPlaying, file
       suppressEvents.current = false;
     }, SUPPRESS_MS);
   }
+
+  // Reset codec warning when the video changes
+  useEffect(() => {
+    setCodecWarning(false);
+  }, [currentFilename]);
 
   // Apply server state when currentFilename / position / isPlaying changes
   useEffect(() => {
@@ -58,6 +64,13 @@ export default function VideoPlayer({ currentFilename, position, isPlaying, file
     socket.emit('queue:next', {});
   }
 
+  function onLoadedMetadata() {
+    // videoWidth is 0 when the browser can't decode the video track
+    if (videoRef.current && videoRef.current.videoWidth === 0) {
+      setCodecWarning(true);
+    }
+  }
+
   // Position heartbeat every 5s while playing
   useEffect(() => {
     if (!isPlaying) return;
@@ -93,6 +106,13 @@ export default function VideoPlayer({ currentFilename, position, isPlaying, file
 
   return (
     <div className="player-wrapper">
+      {codecWarning && (
+        <div className="player-codec-warning">
+          Video track unsupported — your browser can't decode this file's codec. Audio is still
+          synced. Try converting to MP4 (H.264) using{' '}
+          <a href="https://handbrake.fr" target="_blank" rel="noreferrer">HandBrake</a>.
+        </div>
+      )}
       <video
         ref={videoRef}
         className="video-el"
@@ -102,6 +122,7 @@ export default function VideoPlayer({ currentFilename, position, isPlaying, file
         onPause={onPause}
         onSeeked={onSeeked}
         onEnded={onEnded}
+        onLoadedMetadata={onLoadedMetadata}
       />
       <div className="player-title">{currentFilename}</div>
     </div>
