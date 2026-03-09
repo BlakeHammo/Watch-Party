@@ -22,8 +22,8 @@ export default function VideoPlayer({ currentFilename, position, isPlaying, file
   // 'idle' | 'loading' | 'done' | 'none-found' | 'too-large' | 'error'
   const [extractState, setExtractState] = useState('idle');
 
-  // Persists the user's chosen language across videos, e.g. "eng"
-  const preferredLang = useRef(null);
+  // Full label of the last subtitle track the user picked, e.g. "Track 1 (eng)"
+  const preferredSubLabel = useRef(null);
   // Set before auto-extraction; useEffect([extractedSubs]) reads it to auto-select
   const pendingAutoSelect = useRef(null);
   // Increments on every extraction start so stale .then() results are ignored
@@ -65,10 +65,10 @@ export default function VideoPlayer({ currentFilename, position, isPlaying, file
       })
       .catch((err) => console.error('[audio] extraction failed:', err));
 
-    // Subtitle auto-extraction (only if user has a language preference)
-    if (!preferredLang.current) return;
+    // Subtitle auto-extraction (only if user has previously selected subtitles)
+    if (!preferredSubLabel.current) return;
 
-    pendingAutoSelect.current = preferredLang.current;
+    pendingAutoSelect.current = preferredSubLabel.current;
     const myId = ++extractionId.current;
     setExtractState('loading');
 
@@ -90,10 +90,21 @@ export default function VideoPlayer({ currentFilename, position, isPlaying, file
   // This runs after the <option> elements exist, so the <select> value resolves correctly.
   useEffect(() => {
     if (!pendingAutoSelect.current || extractedSubs.size === 0) return;
-    const lang = pendingAutoSelect.current;
-    const match = [...extractedSubs.keys()].find((label) =>
-      label.toLowerCase().includes(`(${lang})`)
-    );
+    const preferred = pendingAutoSelect.current;
+    const labels = [...extractedSubs.keys()];
+
+    // 1. Exact label match (reliable for same-encoder series)
+    let match = labels.find((l) => l === preferred);
+
+    // 2. Language code fallback — e.g. preferred was "Track 1 (eng)", new label differs
+    if (!match) {
+      const m = preferred.match(/\(([a-z]{2,3})\)/i);
+      if (m) {
+        const lang = m[1].toLowerCase();
+        match = labels.find((l) => l.toLowerCase().includes(`(${lang})`));
+      }
+    }
+
     if (match) {
       setActiveSub(match);
       pendingAutoSelect.current = null;
@@ -177,18 +188,12 @@ export default function VideoPlayer({ currentFilename, position, isPlaying, file
     }
   }
 
-  // Save language preference when user picks a subtitle track.
-  // Labels look like "Track 1 (eng)" — extract the 2-3 letter code.
-  // Selecting "Off" clears the preference.
+  // Save the full subtitle label as preference when user picks a track.
+  // Selecting "Off" clears it so no auto-extraction happens on the next video.
   function handleSubChange(e) {
     const val = e.target.value;
     setActiveSub(val);
-    if (val === 'none') {
-      preferredLang.current = null;
-    } else {
-      const langMatch = val.match(/\(([a-z]{2,3})\)$/i);
-      if (langMatch) preferredLang.current = langMatch[1].toLowerCase();
-    }
+    preferredSubLabel.current = val === 'none' ? null : val;
   }
 
   // Position heartbeat every 5s while playing
