@@ -24,6 +24,7 @@ const ID = {
   BlockDuration: 0x9B,
 };
 
+const TRACK_TYPE_AUDIO    = 0x02;
 const TRACK_TYPE_SUBTITLE = 0x11;
 
 // ── EBML primitives ──────────────────────────────────────────────────────────
@@ -256,6 +257,69 @@ function processBlock(view, blockEl, clusterTime, timecodeScale, trackMap, durat
 // ── Public API ───────────────────────────────────────────────────────────────
 
 const SIZE_LIMIT = 2 * 1024 ** 3; // 2 GB
+
+/**
+ * Enumerate audio tracks in an MKV file without reading the whole file.
+ * Only reads the first 10 MB (Tracks element is always before any Clusters).
+ * @param {File} file
+ * @returns {Promise<Array<{idx: number, num: number, label: string}>>}
+ */
+export async function extractMkvAudioTracks(file) {
+  const slice  = file.slice(0, 10 * 1024 * 1024);
+  const buffer = await slice.arrayBuffer();
+  const view   = new DataView(buffer);
+
+  const firstId = readId(view, 0);
+  if (!firstId || firstId.value !== 0x1A45DFA3) return [];
+
+  // Scan top-level elements manually — the Segment's declared size spans the full
+  // file, so iterElements() would bail out when using a 10 MB slice.
+  let pos = 0;
+  let segStart = -1;
+  while (pos < view.byteLength) {
+    const idRes = readId(view, pos);
+    if (!idRes) break;
+    pos += idRes.width;
+    const szRes = readSize(view, pos);
+    if (!szRes) break;
+    pos += szRes.width;
+
+    if (idRes.value === ID.Segment) { segStart = pos; break; }
+
+    // Non-Segment top-level elements (EBML header, Void, …) are small — skip them.
+    if (szRes.value < 0 || pos + szRes.value > view.byteLength) break;
+    pos += szRes.value;
+  }
+  if (segStart === -1) return [];
+
+  for (const el of iterElements(view, segStart, view.byteLength)) {
+    if (el.id === ID.Cluster) break;
+    if (el.id !== ID.Tracks) continue;
+
+    const tracks = [];
+    let audioIdx = 0;
+    for (const entry of iterElements(view, el.dataPos, el.dataPos + el.dataSize)) {
+      if (entry.id !== ID.TrackEntry) continue;
+      let num = 0, type = 0, lang = '', name = '';
+      for (const f of iterElements(view, entry.dataPos, entry.dataPos + entry.dataSize)) {
+        switch (f.id) {
+          case ID.TrackNumber: num  = readUInt(view, f.dataPos, f.dataSize); break;
+          case ID.TrackType:   type = readUInt(view, f.dataPos, f.dataSize); break;
+          case ID.Language:    lang = readString(view, f.dataPos, f.dataSize); break;
+          case ID.TrackName:   name = readString(view, f.dataPos, f.dataSize); break;
+        }
+      }
+      if (type === TRACK_TYPE_AUDIO) {
+        const label = name ||
+          (lang && lang !== 'und' ? `Track ${audioIdx + 1} (${lang})` : `Track ${audioIdx + 1}`);
+        tracks.push({ idx: audioIdx, num, label });
+        audioIdx++;
+      }
+    }
+    return tracks;
+  }
+  return [];
+}
 
 /**
  * Extract subtitle tracks from an MKV file.

@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import socket from '../socket';
-import { extractMkvSubtitles } from '../lib/mkvSubtitles';
+import { extractMkvSubtitles, extractMkvAudioTracks } from '../lib/mkvSubtitles';
 
 const SEEK_THRESHOLD = 0.5; // seconds — ignore tiny drift
 const SUPPRESS_MS = 300;    // ms to suppress echo events after programmatic action
@@ -11,6 +11,10 @@ export default function VideoPlayer({ currentFilename, position, isPlaying, file
   const suppressEvents = useRef(false);
   const suppressTimer = useRef(null);
   const [codecWarning, setCodecWarning] = useState(false);
+
+  // Audio track state
+  const [audioTracks, setAudioTracks] = useState([]);
+  const [activeAudioIdx, setActiveAudioIdx] = useState(0);
 
   // Subtitle state
   const [extractedSubs, setExtractedSubs] = useState(new Map());
@@ -34,33 +38,46 @@ export default function VideoPlayer({ currentFilename, position, isPlaying, file
     suppressTimer.current = setTimeout(() => { suppressEvents.current = false; }, SUPPRESS_MS);
   }
 
-  // When the video changes: reset UI state, then auto-extract if we have a language preference
+  // When the video changes: reset UI state, then run MKV-specific extractions
   useEffect(() => {
     setCodecWarning(false);
+    setAudioTracks([]);
+    setActiveAudioIdx(0);
     setExtractedSubs(new Map());
     setActiveSub('none');
     setExtractState('idle');
     pendingAutoSelect.current = null;
 
-    if (!preferredLang.current || !currentFilename?.toLowerCase().endsWith('.mkv')) return;
+    const isMkvFile = currentFilename?.toLowerCase().endsWith('.mkv');
+    if (!isMkvFile) return;
 
     const file = rawFileMapRef.current?.get(currentFilename);
-    if (!file) return;
+    if (!file) {
+      console.log('[audio] file not in rawFileMap — folder not opened?', currentFilename);
+      return;
+    }
 
-    // Mark which language to auto-select once tracks arrive
+    // EBML audio track enumeration (fast — only reads first 10 MB)
+    extractMkvAudioTracks(file)
+      .then((tracks) => {
+        console.log('[audio] found', tracks.length, 'track(s):', tracks.map(t => t.label));
+        if (tracks.length > 1) setAudioTracks(tracks);
+      })
+      .catch((err) => console.error('[audio] extraction failed:', err));
+
+    // Subtitle auto-extraction (only if user has a language preference)
+    if (!preferredLang.current) return;
+
     pendingAutoSelect.current = preferredLang.current;
-
-    // Stamp this extraction so a stale result from a previous video can't apply
     const myId = ++extractionId.current;
     setExtractState('loading');
 
     extractMkvSubtitles(file)
       .then((tracks) => {
-        if (extractionId.current !== myId) return; // video changed before this finished
+        if (extractionId.current !== myId) return;
         if (tracks.length === 0) { setExtractState('none-found'); return; }
         setExtractedSubs(new Map(tracks.map(({ label, url }) => [label, url])));
         setExtractState('done');
-        // Auto-selection is handled by useEffect([extractedSubs]) below
       })
       .catch((err) => {
         if (extractionId.current !== myId) return;
@@ -127,7 +144,37 @@ export default function VideoPlayer({ currentFilename, position, isPlaying, file
   }
 
   function onLoadedMetadata() {
-    if (videoRef.current?.videoWidth === 0) setCodecWarning(true);
+    const el = videoRef.current;
+    if (!el) return;
+    if (el.videoWidth === 0) setCodecWarning(true);
+
+    // For non-MKV files, try the browser audioTracks API.
+    // MKV audio tracks are enumerated via EBML parsing (works in Chrome/Edge too).
+    if (!currentFilename?.toLowerCase().endsWith('.mkv')) {
+      const atl = el.audioTracks;
+      if (atl && atl.length > 1) {
+        const tracks = [];
+        for (let i = 0; i < atl.length; i++) {
+          const t = atl[i];
+          const label = t.label ||
+            (t.language ? `Track ${i + 1} (${t.language})` : `Track ${i + 1}`);
+          tracks.push({ idx: i, label, enabled: t.enabled });
+        }
+        setAudioTracks(tracks);
+        const enabledIdx = tracks.findIndex((t) => t.enabled);
+        setActiveAudioIdx(enabledIdx >= 0 ? enabledIdx : 0);
+      }
+    }
+  }
+
+  function handleAudioTrackChange(e) {
+    const idx = parseInt(e.target.value, 10);
+    setActiveAudioIdx(idx);
+    const atl = videoRef.current?.audioTracks;
+    if (!atl) return;
+    for (let i = 0; i < atl.length; i++) {
+      atl[i].enabled = (i === idx);
+    }
   }
 
   // Save language preference when user picks a subtitle track.
@@ -256,6 +303,16 @@ export default function VideoPlayer({ currentFilename, position, isPlaying, file
       </video>
 
       <div className="player-tracks">
+        {audioTracks.length > 1 && (
+          <label className="track-select">
+            Audio
+            <select value={activeAudioIdx} onChange={handleAudioTrackChange}>
+              {audioTracks.map(({ idx, label }) => (
+                <option key={idx} value={idx}>{label}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="track-select">
           Subtitles
           <select value={activeSub} onChange={handleSubChange}>
