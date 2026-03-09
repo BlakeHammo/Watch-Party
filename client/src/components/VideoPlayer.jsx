@@ -18,19 +18,70 @@ export default function VideoPlayer({ currentFilename, position, isPlaying, file
   // 'idle' | 'loading' | 'done' | 'none-found' | 'too-large' | 'error'
   const [extractState, setExtractState] = useState('idle');
 
+  // Persists the user's chosen language across videos, e.g. "eng"
+  const preferredLang = useRef(null);
+  // Set before auto-extraction; useEffect([extractedSubs]) reads it to auto-select
+  const pendingAutoSelect = useRef(null);
+  // Increments on every extraction start so stale .then() results are ignored
+  const extractionId = useRef(0);
+  // Always-current ref so the currentFilename effect can read the latest rawFileMap
+  const rawFileMapRef = useRef(rawFileMap);
+  rawFileMapRef.current = rawFileMap;
+
   function suppress() {
     if (suppressTimer.current) clearTimeout(suppressTimer.current);
     suppressEvents.current = true;
     suppressTimer.current = setTimeout(() => { suppressEvents.current = false; }, SUPPRESS_MS);
   }
 
-  // Reset all per-video state when the video changes
+  // When the video changes: reset UI state, then auto-extract if we have a language preference
   useEffect(() => {
     setCodecWarning(false);
     setExtractedSubs(new Map());
     setActiveSub('none');
     setExtractState('idle');
-  }, [currentFilename]);
+    pendingAutoSelect.current = null;
+
+    if (!preferredLang.current || !currentFilename?.toLowerCase().endsWith('.mkv')) return;
+
+    const file = rawFileMapRef.current?.get(currentFilename);
+    if (!file) return;
+
+    // Mark which language to auto-select once tracks arrive
+    pendingAutoSelect.current = preferredLang.current;
+
+    // Stamp this extraction so a stale result from a previous video can't apply
+    const myId = ++extractionId.current;
+    setExtractState('loading');
+
+    extractMkvSubtitles(file)
+      .then((tracks) => {
+        if (extractionId.current !== myId) return; // video changed before this finished
+        if (tracks.length === 0) { setExtractState('none-found'); return; }
+        setExtractedSubs(new Map(tracks.map(({ label, url }) => [label, url])));
+        setExtractState('done');
+        // Auto-selection is handled by useEffect([extractedSubs]) below
+      })
+      .catch((err) => {
+        if (extractionId.current !== myId) return;
+        console.error('[mkvSubtitles]', err);
+        setExtractState(err.code === 'TOO_LARGE' ? 'too-large' : 'error');
+      });
+  }, [currentFilename]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // After extractedSubs is committed to the DOM, apply any pending auto-selection.
+  // This runs after the <option> elements exist, so the <select> value resolves correctly.
+  useEffect(() => {
+    if (!pendingAutoSelect.current || extractedSubs.size === 0) return;
+    const lang = pendingAutoSelect.current;
+    const match = [...extractedSubs.keys()].find((label) =>
+      label.toLowerCase().includes(`(${lang})`)
+    );
+    if (match) {
+      setActiveSub(match);
+      pendingAutoSelect.current = null;
+    }
+  }, [extractedSubs]);
 
   // Apply server state changes
   useEffect(() => {
@@ -79,6 +130,20 @@ export default function VideoPlayer({ currentFilename, position, isPlaying, file
     if (videoRef.current?.videoWidth === 0) setCodecWarning(true);
   }
 
+  // Save language preference when user picks a subtitle track.
+  // Labels look like "Track 1 (eng)" — extract the 2-3 letter code.
+  // Selecting "Off" clears the preference.
+  function handleSubChange(e) {
+    const val = e.target.value;
+    setActiveSub(val);
+    if (val === 'none') {
+      preferredLang.current = null;
+    } else {
+      const langMatch = val.match(/\(([a-z]{2,3})\)$/i);
+      if (langMatch) preferredLang.current = langMatch[1].toLowerCase();
+    }
+  }
+
   // Position heartbeat every 5s while playing
   useEffect(() => {
     if (!isPlaying) return;
@@ -89,7 +154,7 @@ export default function VideoPlayer({ currentFilename, position, isPlaying, file
     return () => clearInterval(interval);
   }, [isPlaying]);
 
-  // ── MKV subtitle extraction (pure JS, no WASM) ────────────────────────────
+  // ── Manual MKV subtitle extraction ────────────────────────────────────────
 
   async function handleExtractSubtitles() {
     const file = rawFileMap?.get(currentFilename);
@@ -100,9 +165,14 @@ export default function VideoPlayer({ currentFilename, position, isPlaying, file
       return;
     }
 
+    // Manual extraction: don't auto-select (let user choose), stamp to cancel stale auto
+    pendingAutoSelect.current = null;
+    const myId = ++extractionId.current;
+
     try {
       setExtractState('loading');
       const tracks = await extractMkvSubtitles(file);
+      if (extractionId.current !== myId) return;
       if (tracks.length === 0) {
         setExtractState('none-found');
         return;
@@ -110,6 +180,7 @@ export default function VideoPlayer({ currentFilename, position, isPlaying, file
       setExtractedSubs(new Map(tracks.map(({ label, url }) => [label, url])));
       setExtractState('done');
     } catch (err) {
+      if (extractionId.current !== myId) return;
       console.error('[mkvSubtitles]', err);
       setExtractState(err.code === 'TOO_LARGE' ? 'too-large' : 'error');
     }
@@ -187,7 +258,7 @@ export default function VideoPlayer({ currentFilename, position, isPlaying, file
       <div className="player-tracks">
         <label className="track-select">
           Subtitles
-          <select value={activeSub} onChange={(e) => setActiveSub(e.target.value)}>
+          <select value={activeSub} onChange={handleSubChange}>
             <option value="none">Off</option>
             {allSubs.map(({ label }) => (
               <option key={label} value={label}>{label}</option>

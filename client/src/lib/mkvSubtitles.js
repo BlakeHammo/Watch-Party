@@ -13,6 +13,7 @@ const ID = {
   TrackNumber:   0xD7,
   TrackType:     0x83,
   CodecID:       0x86,
+  CodecPrivate:  0x63A2,
   Language:      0x22B59C,
   TrackName:     0x536E,
   Cluster:       0x1F43B675,
@@ -97,19 +98,55 @@ function parseTracks(view, pos, size) {
   const subtitleTracks = [];
   for (const el of iterElements(view, pos, pos + size)) {
     if (el.id !== ID.TrackEntry) continue;
-    let num = 0, type = 0, codec = '', lang = '', name = '';
+    let num = 0, type = 0, codec = '', lang = '', name = '', codecPrivate = '';
     for (const f of iterElements(view, el.dataPos, el.dataPos + el.dataSize)) {
       switch (f.id) {
-        case ID.TrackNumber: num   = readUInt(view, f.dataPos, f.dataSize); break;
-        case ID.TrackType:   type  = readUInt(view, f.dataPos, f.dataSize); break;
-        case ID.CodecID:     codec = readString(view, f.dataPos, f.dataSize); break;
-        case ID.Language:    lang  = readString(view, f.dataPos, f.dataSize); break;
-        case ID.TrackName:   name  = readString(view, f.dataPos, f.dataSize); break;
+        case ID.TrackNumber:  num          = readUInt(view, f.dataPos, f.dataSize); break;
+        case ID.TrackType:    type         = readUInt(view, f.dataPos, f.dataSize); break;
+        case ID.CodecID:      codec        = readString(view, f.dataPos, f.dataSize); break;
+        case ID.Language:     lang         = readString(view, f.dataPos, f.dataSize); break;
+        case ID.TrackName:    name         = readString(view, f.dataPos, f.dataSize); break;
+        case ID.CodecPrivate: codecPrivate = readString(view, f.dataPos, f.dataSize); break;
       }
     }
-    if (type === TRACK_TYPE_SUBTITLE) subtitleTracks.push({ num, codec, lang, name });
+    if (type === TRACK_TYPE_SUBTITLE) subtitleTracks.push({ num, codec, lang, name, codecPrivate });
   }
   return subtitleTracks;
+}
+
+// Parse the ASS/SSA script header stored in a track's CodecPrivate element.
+// Returns { fontFamily, fontSize, playResY, bold, italic } or null if not parseable.
+function parseAssStyle(headerText) {
+  if (!headerText) return null;
+  const lines = headerText.split(/\r?\n/);
+  let playResY = 288; // ASS default if unspecified
+  let fontFamily = null, fontSize = null, bold = false, italic = false;
+  let inStyles = false, formatFields = null, foundDefault = false;
+
+  for (const line of lines) {
+    const t = line.trim();
+    if (t.startsWith('[')) {
+      inStyles = t === '[V4+ Styles]' || t === '[V4 Styles]';
+    } else if (t.startsWith('PlayResY:')) {
+      playResY = parseInt(t.split(':')[1]) || playResY;
+    } else if (inStyles && t.startsWith('Format:')) {
+      formatFields = t.slice(7).split(',').map(f => f.trim());
+    } else if (inStyles && t.startsWith('Style:') && formatFields) {
+      const values = t.slice(6).split(',').map(v => v.trim());
+      const get = (field) => values[formatFields.indexOf(field)] ?? '';
+      const styleName = get('Name');
+      if (!foundDefault || styleName === 'Default') {
+        fontFamily = get('Fontname') || fontFamily;
+        fontSize   = parseFloat(get('Fontsize')) || fontSize;
+        bold       = get('Bold')   === '-1' || get('Bold')   === '1';
+        italic     = get('Italic') === '-1' || get('Italic') === '1';
+        if (styleName === 'Default') foundDefault = true;
+      }
+    }
+  }
+
+  if (!fontFamily) return null;
+  return { fontFamily, bold, italic };
 }
 
 // Parse the header of a SimpleBlock or Block.
@@ -134,13 +171,25 @@ function getBlockText(view, el, header) {
 
 // ── Subtitle text conversion ─────────────────────────────────────────────────
 
-// Strip ASS/SSA override tags and extract dialogue text from an MKV ASS block.
+// Extract dialogue text from an MKV ASS block, converting basic formatting tags to VTT markup.
 // MKV ASS block format: "ReadOrder,Layer,Style,Name,MarginL,MarginR,MarginV,Effect,Text"
 function cleanAssText(block) {
   const parts = block.split(',');
   const text = parts.length >= 9 ? parts.slice(8).join(',') : block;
   return text
-    .replace(/\{[^}]*\}/g, '')   // {override tags}
+    .replace(/\{([^}]*)\}/g, (_, content) => {
+      // Each {…} block can contain multiple \tag entries separated by backslash.
+      // Convert the ones browsers understand via VTT cue payload markup.
+      return content.split('\\').filter(Boolean).map(tag => {
+        if (tag === 'b1' || tag === 'b-1') return '<b>';
+        if (tag === 'b0')                  return '</b>';
+        if (tag === 'i1' || tag === 'i-1') return '<i>';
+        if (tag === 'i0')                  return '</i>';
+        if (tag === 'u1')                  return '<u>';
+        if (tag === 'u0')                  return '</u>';
+        return ''; // positioning, colour, etc. — not supported in VTT, drop
+      }).join('');
+    })
     .replace(/\\N/gi, '\n')
     .replace(/\\n/gi, '\n')
     .replace(/\\h/g, '\u00A0')
@@ -163,7 +212,7 @@ function toVttTime(ms) {
   return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(f).padStart(3,'0')}`;
 }
 
-function buildVtt(cues) {
+function buildVtt(cues, style) {
   cues.sort((a, b) => a.start - b.start);
   for (let i = 0; i < cues.length; i++) {
     if (cues[i].end < 0) {
@@ -171,7 +220,20 @@ function buildVtt(cues) {
     }
     if (cues[i].end <= cues[i].start) cues[i].end = cues[i].start + 3000;
   }
-  return 'WEBVTT\n\n' + cues.map(c => `${toVttTime(c.start)} --> ${toVttTime(c.end)}\n${c.text}`).join('\n\n') + '\n';
+
+  let header = 'WEBVTT\n\n';
+
+  if (style) {
+    // Set font-family and weight/style from the ASS Default style.
+    // Font-size is intentionally omitted — vh units behave poorly in fullscreen
+    // and the browser's default VTT size already scales well with the video.
+    const lines = [`  font-family: '${style.fontFamily}', sans-serif;`];
+    if (style.bold)   lines.push('  font-weight: bold;');
+    if (style.italic) lines.push('  font-style: italic;');
+    header += `STYLE\n::cue {\n${lines.join('\n')}\n}\n\n`;
+  }
+
+  return header + cues.map(c => `${toVttTime(c.start)} --> ${toVttTime(c.end)}\n${c.text}`).join('\n\n') + '\n';
 }
 
 // ── Block processing helper ───────────────────────────────────────────────────
@@ -274,7 +336,10 @@ export async function extractMkvSubtitles(file) {
     idx++;
     const label = track.name ||
       (track.lang && track.lang !== 'und' ? `Track ${idx} (${track.lang})` : `Track ${idx}`);
-    const vtt  = buildVtt(track.cues);
+    const style = (track.codec.includes('ASS') || track.codec.includes('SSA'))
+      ? parseAssStyle(track.codecPrivate)
+      : null;
+    const vtt  = buildVtt(track.cues, style);
     const url  = URL.createObjectURL(new Blob([vtt], { type: 'text/vtt' }));
     results.push({ label, url });
   }
