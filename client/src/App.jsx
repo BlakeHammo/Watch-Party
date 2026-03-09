@@ -16,6 +16,8 @@ export default function App() {
   const [roomId, setRoomId] = useState(getRoomIdFromUrl);
   const [connected, setConnected] = useState(false);
   const [fileMap, setFileMap] = useState(new Map());
+  const [rawFileMap, setRawFileMap] = useState(new Map());
+  const [subtitleMap, setSubtitleMap] = useState(new Map());
   const [roomInfo, setRoomInfo] = useState({ count: 0, folderReadyCount: 0 });
 
   // Party state
@@ -124,12 +126,14 @@ export default function App() {
             position={position}
             isPlaying={isPlaying}
             fileMap={fileMap}
+            rawFileMap={rawFileMap}
+            subtitleMap={subtitleMap}
           />
           <Queue queue={queue} />
         </section>
 
         <aside className="sidebar">
-          <FolderPicker fileMap={fileMap} onFilesLoaded={setFileMap} />
+          <FolderPicker fileMap={fileMap} onFilesLoaded={setFileMap} onRawFilesLoaded={setRawFileMap} onSubtitlesLoaded={setSubtitleMap} />
           <Library fileMap={fileMap} queue={queue} currentFilename={currentFilename} />
         </aside>
       </main>
